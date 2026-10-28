@@ -12,7 +12,7 @@ set(MOD_NAME "MCBE Tick Changer" CACHE STRING "LeviLauncher mod display name")
 set(MOD_AUTHOR "UnVoidMC" CACHE STRING "LeviLauncher mod author")
 set(MOD_VERSION "1.0.0" CACHE STRING "LeviLauncher mod version")
 set(MOD_LIBRARY_NAME "mcbe_tick_changer" CACHE STRING "Native library name without lib prefix or .so suffix")
-set(MOD_MINECRAFT_VERSIONS "[\"1.26.51\"]" CACHE STRING "Raw JSON array for manifest minecraft_versions")
+set(MOD_MINECRAFT_VERSIONS "[\"1.26.60\"]" CACHE STRING "Raw JSON array for manifest minecraft_versions")
 set(MOD_ICON "" CACHE STRING "Optional package-relative icon path, such as icon.png")
 
 include(FetchContent)
