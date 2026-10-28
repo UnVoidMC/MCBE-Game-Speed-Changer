@@ -20,7 +20,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-    packages: 'platform-tools platforms;android-28'
+          packages: 'platform-tools platforms;android-28'
 
       - name: Install Android build tools
         run: |
