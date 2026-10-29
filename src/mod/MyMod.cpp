@@ -128,7 +128,21 @@ bool ClangeMeMod::enable() {
         return true;
     }
 
-    self.getLogger().info("[TAS TEST] Mod enabled successfully. Signature scan skipped.");
+    
+self.getLogger().info("[TAS TEST] Starting DimensionTick-only scan");
+
+const auto address = pl::memory::resolveSignature(
+    signatures[0].pattern,
+    "libminecraftpe.so"
+);
+
+if (address != 0) {
+    self.getLogger().info("[TAS TEST] DimensionTick: FOUND");
+} else {
+    self.getLogger().warn("[TAS TEST] DimensionTick: NOT FOUND");
+}
+
+self.getLogger().info("[TAS TEST] DimensionTick scan finished");
 
     return true;
 }
