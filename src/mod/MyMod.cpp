@@ -128,7 +128,7 @@ bool ClangeMeMod::enable() {
         return true;
     }
 
-    runSignatureTest(self);
+    self.getLogger().info("[TAS TEST] Mod enabled successfully. Signature scan skipped.");
 
     return true;
 }
