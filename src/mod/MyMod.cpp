@@ -1,65 +1,36 @@
 #include "mod/MyMod.h"
 
-#include <array>
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
-#include <string_view>
 
 #include <pl/Mod.hpp>
+#include <pl/memory/Hook.hpp>
 #include <pl/memory/Signature.hpp>
 
 namespace clange_me {
 
 namespace {
 
-struct SignatureTest {
-    std::string_view name;
-    std::string_view pattern;
-};
+constexpr const char* DIMENSION_TICK_PATTERN =
+    "? ? ? D1 ? ? ? FD ? ? ? 6D ? ? ? 6D ? ? ? A9 "
+    "? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? "
+    "A9 ? ? ? 91 5C D0 3B D5 1F 20 03 D5";
 
-constexpr std::array<SignatureTest, 4> signatures{{
-    {
-        "DimensionTick",
-        "? ? ? D1 ? ? ? FD ? ? ? 6D ? ? ? 6D ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? 91 5C D0 3B D5 1F 20 03 D5"
-    },
-    {
-        "NormalTick",
-        "? ? ? FC ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? 91 ? ? ? D1 54 D0 3B D5 F3 03 00 AA ? ? ? F9 ? ? ? F8 ? ? ? 39"
-    },
-    {
-        "ClientInstanceUpdate",
-        "? ? ? FC ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? 91 ? ? ? D1 59 D0 3B D5 ? ? ? 52 F5 03 02 2A"
-    },
-    {
-        "LocalPlayerApplyTurnDelta",
-        "? ? ? D1 ? ? ? FD ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? 91 56 D0 3B D5 F3 03 00 AA F4 03 01 AA ? ? ? F9 ? ? ? F8 ? ? ? F9 ? ? ? F9"
+using DimensionTickFn = void (*)(void*);
+
+DimensionTickFn originalDimensionTick = nullptr;
+void* dimensionTickTarget = nullptr;
+
+std::atomic<std::uint64_t> tickCalls{0};
+
+void dimensionTickDetour(void* dimension) {
+    tickCalls.fetch_add(1, std::memory_order_relaxed);
+
+    // Pass-through only: preserve Minecraft's original behaviour.
+    if (originalDimensionTick) {
+        originalDimensionTick(dimension);
     }
-}};
-
-void runSignatureTest(ll::mod::NativeMod& self) {
-    auto& logger = self.getLogger();
-
-    logger.info("[TAS TEST] Starting Minecraft signature scan");
-
-    int found = 0;
-
-    for (const auto& entry : signatures) {
-        const std::uintptr_t address =
-            pl::memory::resolveSignature(
-                entry.pattern,
-                "libminecraftpe.so"
-            );
-
-        if (address != 0) {
-            ++found;
-            logger.info("[TAS TEST] {}: FOUND", entry.name);
-        } else {
-            logger.warn("[TAS TEST] {}: NOT FOUND", entry.name);
-        }
-    }
-
-    logger.info("[TAS TEST] Result: {}/4 signatures found", found);
-    logger.info("[TAS TEST] No hooks installed. Game speed unchanged.");
 }
 
 } // namespace
@@ -82,8 +53,7 @@ bool ClangeMeMod::load() {
     if (ec) {
         self.getLogger().error(
             "Failed to create data directory {}: {}",
-            self.getDataDir().string(),
-            ec.message()
+            self.getDataDir().string(), ec.message()
         );
         return false;
     }
@@ -94,8 +64,7 @@ bool ClangeMeMod::load() {
     if (ec) {
         self.getLogger().error(
             "Failed to create config directory {}: {}",
-            self.getConfigDir().string(),
-            ec.message()
+            self.getConfigDir().string(), ec.message()
         );
         return false;
     }
@@ -111,8 +80,7 @@ bool ClangeMeMod::load() {
 
     self.getLogger().info(
         "Loaded {} from {}",
-        self.getName(),
-        self.getModDir().string()
+        self.getName(), self.getModDir().string()
     );
 
     return true;
@@ -121,45 +89,88 @@ bool ClangeMeMod::load() {
 bool ClangeMeMod::enable() {
     auto& self = getSelf();
 
-    self.getLogger().debug("Enabling...");
-
     if (!mConfig.enabled) {
-        self.getLogger().info("MCBE Tick Changer disabled by config");
+        self.getLogger().info("[TAS TEST] Disabled by config");
         return true;
     }
 
-    
-
-self.getLogger().info("[TAS TEST] Starting remaining signature tests");
-
-for (std::size_t i = 1; i < signatures.size(); ++i) {
-    self.getLogger().info("[TAS TEST] Scanning {}", signatures[i].name);
+    self.getLogger().info("[TAS TEST] Resolving DimensionTick");
 
     const auto address = pl::memory::resolveSignature(
-        signatures[i].pattern,
+        DIMENSION_TICK_PATTERN,
         "libminecraftpe.so"
     );
 
-    if (address != 0) {
-        self.getLogger().info("[TAS TEST] {}: FOUND", signatures[i].name);
-    } else {
-        self.getLogger().warn("[TAS TEST] {}: NOT FOUND", signatures[i].name);
+    if (!address) {
+        self.getLogger().warn("[TAS TEST] DimensionTick NOT FOUND");
+        return true;
     }
-}
 
-self.getLogger().info("[TAS TEST] Remaining scans finished");
+    dimensionTickTarget = reinterpret_cast<void*>(address);
+    tickCalls.store(0, std::memory_order_relaxed);
 
+    self.getLogger().info("[TAS TEST] Installing pass-through hook");
+
+    const int result = pl::memory::hook(
+        dimensionTickTarget,
+        reinterpret_cast<void*>(dimensionTickDetour),
+        reinterpret_cast<void**>(&originalDimensionTick)
+    );
+
+    if (result != 0) {
+        self.getLogger().error(
+            "[TAS TEST] Hook installation failed: {}", result
+        );
+        dimensionTickTarget = nullptr;
+        originalDimensionTick = nullptr;
+        return true;
+    }
+
+    self.getLogger().info(
+        "[TAS TEST] DimensionTick pass-through hook installed"
+    );
 
     return true;
 }
 
 bool ClangeMeMod::disable() {
-    getSelf().getLogger().debug("Disabling...");
+    auto& logger = getSelf().getLogger();
+
+    if (dimensionTickTarget) {
+        logger.info("[TAS TEST] Removing DimensionTick hook");
+
+        const bool removed = pl::memory::unhook(
+            dimensionTickTarget,
+            reinterpret_cast<void*>(dimensionTickDetour)
+        );
+
+        logger.info(
+            "[TAS TEST] Hook removal: {}",
+            removed ? "SUCCESS" : "FAILED"
+        );
+
+        if (removed) {
+            dimensionTickTarget = nullptr;
+            originalDimensionTick = nullptr;
+        }
+    }
+
+    logger.info(
+        "[TAS TEST] DimensionTick calls observed: {}",
+        tickCalls.load(std::memory_order_relaxed)
+    );
+
     return true;
 }
 
 bool ClangeMeMod::unload() {
-    getSelf().getLogger().debug("Unloading...");
+    if (dimensionTickTarget) {
+        getSelf().getLogger().error(
+            "[TAS TEST] Cannot safely unload: hook still installed"
+        );
+        return false;
+    }
+
     mConfigFile.reset();
     return true;
 }
