@@ -129,20 +129,26 @@ bool ClangeMeMod::enable() {
     }
 
     
-self.getLogger().info("[TAS TEST] Starting DimensionTick-only scan");
 
-const auto address = pl::memory::resolveSignature(
-    signatures[0].pattern,
-    "libminecraftpe.so"
-);
+self.getLogger().info("[TAS TEST] Starting remaining signature tests");
 
-if (address != 0) {
-    self.getLogger().info("[TAS TEST] DimensionTick: FOUND");
-} else {
-    self.getLogger().warn("[TAS TEST] DimensionTick: NOT FOUND");
+for (std::size_t i = 1; i < signatures.size(); ++i) {
+    self.getLogger().info("[TAS TEST] Scanning {}", signatures[i].name);
+
+    const auto address = pl::memory::resolveSignature(
+        signatures[i].pattern,
+        "libminecraftpe.so"
+    );
+
+    if (address != 0) {
+        self.getLogger().info("[TAS TEST] {}: FOUND", signatures[i].name);
+    } else {
+        self.getLogger().warn("[TAS TEST] {}: NOT FOUND", signatures[i].name);
+    }
 }
 
-self.getLogger().info("[TAS TEST] DimensionTick scan finished");
+self.getLogger().info("[TAS TEST] Remaining scans finished");
+
 
     return true;
 }
